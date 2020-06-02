@@ -1,0 +1,97 @@
+// Keywords: migration, dispersal
+
+initialize() {
+	initializeMutationRate(1e-7);
+	initializeMutationType("m1", 0.5, "f", 0.0);
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, 2e6);
+	initializeRecombinationRate(1e-7);
+	
+	//defineConstant("s", 0.1);
+	//defineConstant("freqLo", 0.005);
+	//defineConstant("freqHi", 0.01);
+}
+
+// Create the ancestral African population
+1 { 
+	defineConstant("simID", getSeed());
+	sim.addSubpop("p1", 1000); 
+}
+
+//first popn split
+10000 { sim.addSubpopSplit("p2", 1000, p1); }
+
+//first popn split
+10200 { sim.addSubpopSplit("p3", 1000, p2); }
+
+10320 { sim.addSubpopSplit("p4", 1000, p3); 
+	sim.outputFull(outfile + ".i_"+ iter +".tmp." + simID + ".txt");
+
+
+	muts = sim.mutations;
+	
+	// pick a mutation within ±10kb of the center of the locus
+	// also condition on initial frequency in some range
+	muts = muts[muts.position > 1e6-1e4];
+	muts = muts[muts.position < 1e6+1e4];
+	muts = muts[sim.mutationFrequencies(p3, muts) > freqLo];
+	muts = muts[sim.mutationFrequencies(p3, muts) < freqHi];
+	
+	if (size(muts))
+	{
+		mut = sample(muts, 1);
+		mut.setSelectionCoeff(s);
+	}
+	else
+	{
+		cat("No contender of sufficient frequency found.\n");
+		sim.simulationFinished(); 
+	}
+	
+		
+}
+
+fitness(m1, p1) { return 1.0; }
+fitness(m1, p2) { return 1.0; }
+fitness(m1, p4) { return 1.0; }
+10320:10400 {
+	muts = sim.mutations;
+	muts = muts[muts.selectionCoeff != 0];
+	if (size(muts) == 0){
+		// go back to generation 1000
+		sim.readFromPopulationFile(outfile +".i_"+ iter + ".tmp." + simID + ".txt");
+		// start a newly seeded run
+		setSeed(rdunif(1, 0, asInteger(2^32) - 1));
+		
+		// re-introduce the sweep mutation
+		muts = sim.mutations;
+		muts = muts[muts.position > 1e6-1e4];
+		muts = muts[muts.position < 1e6+1e4];
+		muts = muts[sim.mutationFrequencies(p3, muts) > freqLo];
+		muts = muts[sim.mutationFrequencies(p3, muts) < freqHi];
+	
+		if (size(muts))
+		{
+			mut = sample(muts, 1);
+			mut.setSelectionCoeff(s);
+		}
+		else
+		{
+			cat("No contender of sufficient frequency found.\n");
+			sim.simulationFinished(); 
+		}
+	}
+}
+
+
+10400 late() {
+	muts = sim.mutations;
+	muts = muts[muts.selectionCoeff != 0];
+	catn(sim.mutationFrequencies(p1, muts));
+	catn(sim.mutationFrequencies(p2, muts));
+	catn(sim.mutationFrequencies(p3, muts));
+	catn(sim.mutationFrequencies(p4, muts));
+
+	inds = c(p1,p2,p3,p4).sampleIndividuals(20);
+        inds.genomes.outputVCF(filePath=outfile+".i_"+ iter +'.vcf');
+}
